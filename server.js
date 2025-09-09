@@ -29,6 +29,7 @@ import coachRoutes from './routes/coach.js';
 import forumRoutes from './routes/forum.js';
 import houseRoutes from './routes/house.js';
 import decisionHelperRoutes from './routes/decision-helper.js';
+import messagesRoutes from './routes/messages.js';
 
 // Prefer IPv4 to avoid potential DNS v6 issues
 dns.setDefaultResultOrder('ipv4first');
@@ -81,6 +82,7 @@ app.use('/api/coach', coachRoutes);
 app.use('/api/forum', forumRoutes);
 app.use('/api/houses', houseRoutes);
 app.use('/api/decision-helper', decisionHelperRoutes);
+app.use('/api/messages', messagesRoutes);
 
 // Form submission endpoint
 app.post('/api/submit', async (req, res) => {
@@ -197,6 +199,18 @@ io.on('connection', (socket) => {
   });
 
   // Optionally handle disconnects, etc.
+  // DM rooms for user↔coach threads
+  socket.on('joinDmRoom', ({ userId, coachId }) => {
+    if (!userId || !coachId) return;
+    socket.join(`dm_${userId}_${coachId}`);
+  });
+  socket.on('dmMessage', (data) => {
+    const { userId, coachId, message, senderType, at } = data || {};
+    if (!userId || !coachId || !message) return;
+    io.to(`dm_${userId}_${coachId}`).emit('dmMessage', {
+      userId, coachId, message, senderType, createdAt: at || new Date()
+    });
+  });
 });
 
 // Start the server (with Socket.IO)
