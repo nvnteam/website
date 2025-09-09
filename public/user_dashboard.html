@@ -14,6 +14,7 @@
   <link rel="icon" href="images/nevengilogo.webp" type="image/webp">
   <title>Nevengi User Dashboard</title>
   <link rel="stylesheet" href="user_dashboard.css">
+  <script src="/socket.io/socket.io.js"></script>
   <!-- OneSignal Web Push SDK v16 -->
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script>
@@ -186,7 +187,7 @@
   <div id="dashboard" class="container hidden">
     <div style="flex:1;">
       <nav class="dashboard-nav">
-        <button data-tab="explore"><i class="ph ph-magnifying-glass icon-minimal"></i>Explore Coaches</button>
+        <button data-tab="messages"><i class="ph ph-chat-circle icon-minimal"></i>Messages</button>
         <button data-tab="rewards"><i class="ph ph-gift icon-minimal"></i>Rewards Shop</button>
         <button data-tab="leaderboard"><i class="ph ph-trophy icon-minimal"></i>Leaderboard</button>
         <button data-tab="status"><i class="ph ph-barbell icon-minimal"></i>My XP & Maples</button>
@@ -198,10 +199,26 @@
         <a href="model.html" class="btn"><i class="ph ph-arrow-right icon-minimal"></i>Go to Page 2</a>
       </nav>
 
-      <!-- Explore Coaches -->
-      <section id="explore">
-        <h2>Explore Coaches</h2>
-        <ul id="coachList"></ul>
+      <!-- Messages with Coaches -->
+      <section id="messages">
+        <h2>Messages</h2>
+        <div class="dm-layout">
+          <div class="dm-threads">
+            <div class="dm-threads-header">Your Coaches</div>
+            <ul id="dmThreads"></ul>
+          </div>
+          <div class="dm-chat">
+            <div class="dm-chat-header">
+              <img id="dmCoachAvatar" class="dm-coach-avatar" src="" alt="">
+              <span id="dmCoachName">Select a coach</span>
+            </div>
+            <div id="dmMessages" class="dm-messages"></div>
+            <form id="dmForm" class="dm-input">
+              <input id="dmInput" type="text" placeholder="Type a message..." maxlength="500" autocomplete="off">
+              <button type="submit">Send</button>
+            </form>
+          </div>
+        </div>
       </section>
 
       <!-- Rewards Shop (Shopify) -->
@@ -380,6 +397,8 @@
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       const API_BASE = '';
+      let socket = null;
+      let currentCoachId = null;
 
       // Login flow
       document.getElementById('loginBtn').addEventListener('click', () => {
@@ -400,6 +419,8 @@
       if (token) {
         document.getElementById('loginScreen').classList.add('hidden');
         document.getElementById('dashboard').classList.remove('hidden');
+        // Init socket after auth UI; socket.io script is loaded in head
+        if (window.io) { socket = io(); }
       }
 
       // After login, check if user needs onboarding
@@ -563,6 +584,9 @@
         if (tab === 'resources') {
           loadResources();
         }
+        if (tab === 'messages') {
+          loadThreads();
+        }
       }
 
       // Attach handler to both navs
@@ -572,6 +596,133 @@
 
       // Set initial active tab
       handleTabClick('home');
+
+      // ─────────────────────────────────────────────────────
+      // Messages (DM) with Coaches
+      async function loadThreads() {
+        const threadsEl = document.getElementById('dmThreads');
+        if (!threadsEl) return;
+        threadsEl.innerHTML = '<li class="dm-thread loading">Loading…</li>';
+        try {
+          const res = await fetch('/api/messages/threads', { headers: { Authorization: 'Bearer ' + token } });
+          if (!res.ok) throw new Error('Failed to load threads');
+          const threads = await res.json();
+          if (!threads.length) {
+            threadsEl.innerHTML = '<li class="dm-thread empty">No subscribed coaches yet.</li>';
+            return;
+          }
+          threadsEl.innerHTML = threads.map(t => `
+            <li class="dm-thread${t.unread ? ' unread' : ''}" data-coach-id="${t.coachId}" data-coach-name="${t.coachName}" data-coach-avatar="${t.coachAvatar || ''}">
+              <img src="${t.coachAvatar || 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png'}" class="dm-thread-avatar" alt="">
+              <div class="dm-thread-main">
+                <div class="dm-thread-top"><span class="dm-thread-name">${t.coachName}</span>${t.unread ? `<span class="dm-unread-badge">${t.unread}</span>` : ''}</div>
+                <div class="dm-thread-last">${t.lastMessage ? (t.lastMessage.length > 48 ? (t.lastMessage.slice(0,48) + '…') : t.lastMessage) : ''}</div>
+              </div>
+            </li>
+          `).join('');
+        } catch (e) {
+          threadsEl.innerHTML = '<li class="dm-thread error">Failed to load.</li>';
+        }
+      }
+
+      async function openThread(coachId, coachName, coachAvatar) {
+        currentCoachId = coachId;
+        const nameEl = document.getElementById('dmCoachName');
+        const avatarEl = document.getElementById('dmCoachAvatar');
+        if (nameEl) nameEl.textContent = coachName || 'Coach';
+        if (avatarEl) avatarEl.src = coachAvatar || 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png';
+        // Join socket room
+        if (socket && window.currentUserId && coachId) {
+          socket.emit('joinDmRoom', { userId: window.currentUserId, coachId });
+        }
+        // Mark read
+        try { await fetch(`/api/messages/mark-read/${coachId}`, { method:'POST', headers: { Authorization:'Bearer ' + token } }); } catch(e) {}
+        // Load messages
+        await loadMessages(coachId);
+      }
+
+      async function loadMessages(coachId) {
+        const msgsEl = document.getElementById('dmMessages');
+        if (!msgsEl) return;
+        msgsEl.innerHTML = '<div class="dm-loading">Loading…</div>';
+        try {
+          const res = await fetch(`/api/messages/with/${coachId}?limit=100`, { headers: { Authorization: 'Bearer ' + token } });
+          if (!res.ok) throw new Error('Failed to load messages');
+          const messages = await res.json();
+          msgsEl.innerHTML = messages.map(m => renderMsg(m)).join('');
+          msgsEl.scrollTop = msgsEl.scrollHeight;
+        } catch (e) {
+          msgsEl.innerHTML = '<div class="dm-error">Failed to load messages.</div>';
+        }
+      }
+
+      function escapeHtml(text) {
+        return String(text).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]));
+      }
+
+      function renderMsg(m) {
+        const isUser = m.senderType === 'user';
+        const when = new Date(m.createdAt || m.updatedAt || Date.now()).toLocaleString();
+        return `
+          <div class="dm-message ${isUser ? 'from-user' : 'from-coach'}">
+            <div class="dm-bubble">${escapeHtml(m.message)}</div>
+            <div class="dm-time">${when}</div>
+          </div>
+        `;
+      }
+
+      // Thread click
+      document.addEventListener('click', function(e) {
+        const item = e.target.closest('.dm-thread');
+        if (!item) return;
+        const id = item.getAttribute('data-coach-id');
+        const nm = item.getAttribute('data-coach-name');
+        const av = item.getAttribute('data-coach-avatar');
+        openThread(id, nm, av);
+      });
+
+      // Send form
+      const dmForm = document.getElementById('dmForm');
+      const dmInput = document.getElementById('dmInput');
+      if (dmForm && dmInput) {
+        dmForm.addEventListener('submit', async function(e) {
+          e.preventDefault();
+          const text = dmInput.value.trim();
+          if (!text || !currentCoachId) return;
+          // Optimistic
+          const msgsEl = document.getElementById('dmMessages');
+          const optimistic = { senderType:'user', message: text, createdAt: new Date().toISOString() };
+          msgsEl.insertAdjacentHTML('beforeend', renderMsg(optimistic));
+          msgsEl.scrollTop = msgsEl.scrollHeight;
+          dmInput.value = '';
+          try {
+            const res = await fetch(`/api/messages/with/${currentCoachId}`, {
+              method:'POST',
+              headers: { 'Content-Type':'application/json', Authorization: 'Bearer ' + token },
+              body: JSON.stringify({ message: text })
+            });
+            if (!res.ok) throw new Error('Send failed');
+            // Emit to room
+            if (socket && window.currentUserId) {
+              socket.emit('dmMessage', { userId: window.currentUserId, coachId: currentCoachId, message: text, senderType: 'user', at: new Date() });
+            }
+          } catch (err) {
+            // reload on failure
+            await loadMessages(currentCoachId);
+          }
+        });
+      }
+
+      // Socket incoming
+      if (socket) {
+        socket.on('dmMessage', (data) => {
+          if (!data || data.coachId !== currentCoachId) return;
+          const msgsEl = document.getElementById('dmMessages');
+          if (!msgsEl) return;
+          msgsEl.insertAdjacentHTML('beforeend', renderMsg({ senderType: data.senderType, message: data.message, createdAt: data.createdAt }));
+          msgsEl.scrollTop = msgsEl.scrollHeight;
+        });
+      }
 
       // Helper: render one coach, with optional pinned styling and subscription status
       function renderCoachItem(coach, isSubscribed = false, pinned = false) {
@@ -700,6 +851,8 @@
           spiritual: user.spiritual ?? user.niches?.spiritual
         };
         attachIconPopups();
+        // Store current user id for DM rooms
+        try { window.currentUserId = user._id || user.id; } catch (e) {}
       }
 
       async function loadShop() {
@@ -817,7 +970,6 @@
 
       // Initialize all data
       if (token) {
-        loadCoaches();
         loadLeaderboard();
         loadStatus();
         loadShop();
@@ -1195,7 +1347,7 @@
         });
       }
       // Attach tracking to nav buttons
-      ['explore','rewards','leaderboard','status','plans','reports','home','settings'].forEach(id => {
+      ['messages','rewards','leaderboard','status','plans','reports','home','settings'].forEach(id => {
         document.querySelectorAll(`[data-tab="${id}"]`).forEach(btn => {
           btn.addEventListener('click',()=>trackButtonClick(id));
         });
@@ -1341,7 +1493,7 @@
 
   <!-- Add mobile bottom nav -->
   <nav class="mobile-bottom-nav">
-    <button data-tab="explore"><i class="ph ph-magnifying-glass icon-minimal"></i><div>Coaches</div></button>
+    <button data-tab="messages"><i class="ph ph-chat-circle icon-minimal"></i><div>Messages</div></button>
     <button data-tab="rewards"><i class="ph ph-gift icon-minimal"></i><div>Rewards</div></button>
     <button data-tab="home"><i class="ph ph-house icon-minimal"></i><div>Home</div></button>
     <button data-tab="resources"><i class="ph ph-play-circle icon-minimal"></i><div>Resources</div></button>

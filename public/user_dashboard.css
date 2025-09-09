@@ -452,6 +452,60 @@ li { background: var(--color-bg); margin-bottom: 0.5rem; padding: 0.75rem; borde
     margin-right: auto;
     box-sizing: border-box;
   }
+
+  /* ─────────────────────────────────────────────
+     Direct Messages UI */
+  .dm-layout {
+    display: flex;
+    gap: 1rem;
+    align-items: stretch;
+  }
+  .dm-threads {
+    width: 300px;
+    max-width: 40vw;
+    background: var(--color-bg);
+    border: 1.5px solid rgba(0,255,128,0.08);
+    border-radius: 16px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+    overflow: hidden;
+  }
+  .dm-threads-header {
+    padding: 0.8rem 1rem;
+    font-weight: 700;
+    color: var(--color-text);
+    border-bottom: 1px solid #eee;
+  }
+  #dmThreads { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow-y: auto; }
+  .dm-thread { display: flex; gap: 0.7rem; padding: 0.7rem 0.8rem; cursor: pointer; align-items: center; }
+  .dm-thread:hover { background: rgba(0,0,0,0.03); }
+  .dm-thread-avatar { width: 40px; height: 40px; border-radius: 50%; border: 2px solid #eee; object-fit: cover; }
+  .dm-thread-main { flex: 1; display: flex; flex-direction: column; }
+  .dm-thread-top { display: flex; justify-content: space-between; align-items: center; }
+  .dm-thread-name { font-weight: 600; color: var(--color-text); }
+  .dm-thread-last { font-size: 0.95em; color: #888; margin-top: 2px; }
+  .dm-unread-badge { background: #d32f2f; color: #fff; border-radius: 12px; padding: 0.1rem 0.5rem; font-size: 0.85em; }
+  .dm-thread.unread .dm-thread-name { color: #008cba; }
+
+  .dm-chat { flex: 1; display: flex; flex-direction: column; background: var(--color-bg); border: 1.5px solid rgba(0,255,128,0.08); border-radius: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+  .dm-chat-header { display: flex; align-items: center; gap: 0.6rem; padding: 0.8rem 1rem; border-bottom: 1px solid #eee; }
+  .dm-coach-avatar { width: 36px; height: 36px; border-radius: 50%; border: 2px solid #eee; object-fit: cover; }
+  .dm-messages { flex: 1; overflow-y: auto; padding: 0.9rem; display: flex; flex-direction: column; gap: 0.5rem; }
+  .dm-message { display: flex; flex-direction: column; max-width: 76%; }
+  .dm-message.from-user { align-self: flex-end; text-align: right; }
+  .dm-message.from-coach { align-self: flex-start; text-align: left; }
+  .dm-bubble { display: inline-block; padding: 0.6rem 0.8rem; border-radius: 14px; background: #008cba; color: #fff; }
+  .dm-message.from-coach .dm-bubble { background: #e6f7ff; color: #222; border: 1px solid #cfefff; }
+  .dm-time { font-size: 0.8em; color: #888; margin-top: 2px; }
+  .dm-input { display: flex; gap: 0.5rem; padding: 0.7rem; border-top: 1px solid #eee; }
+  .dm-input input { flex: 1; padding: 0.6rem 0.8rem; border: 1px solid #ddd; border-radius: 10px; font-size: 1rem; }
+  .dm-input button { background: #008cba; color: #fff; border: none; border-radius: 10px; padding: 0.6rem 1rem; font-weight: 600; }
+  .dm-loading, .dm-error { padding: 0.8rem; color: #888; }
+
+  @media (max-width: 768px) {
+    .dm-layout { flex-direction: column; }
+    .dm-threads { width: 100%; max-width: 100%; }
+    .dm-message { max-width: 88%; }
+  }
 }
 @media (min-width: 601px) {
   .mobile-icon-scroll-container {
